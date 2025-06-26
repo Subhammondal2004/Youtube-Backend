@@ -1,6 +1,6 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/apiError.js";
-import { Apiresponse } from "../utils/apiResponse.js";
+import  Apiresponse from "../utils/apiResponse.js";
 import { User }  from "../models/user-model.js";
 import { uploadCloudinary } from "../utils/cloudinary.js";
 
@@ -13,17 +13,22 @@ const registerUser = asyncHandler(async(req, res)=>{
     }
 
     const existedUser = await User.findOne({
-        $or: [username, email]    //to check the all fields
+        $or: [{ username }, { email }]    //to check the all fields
     })
 
     if(existedUser){
         throw new ApiError(409, "User with username or email already exists");
     }
-
+  
     //extract the localpath of the files uploaded using multer
     const avatarlocalPath =  req.files?.avatar[0]?.path;
-    const coverImagelocalPath = req.files?.coverImage[0]?.path;
+    // const coverImagelocalPath = req.files?.coverImage[0]?.path;
 
+    let coverImagelocalPath ;
+    if(req.files?.coverImage && req.files?.coverImage.length > 0){
+        coverImagelocalPath = req.files.coverImage[0].path;
+    }
+    
     //checking if the avatar is uploaded or not
     if(!avatarlocalPath){
         throw new ApiError(400, "Avatar is required");
@@ -56,7 +61,7 @@ const registerUser = asyncHandler(async(req, res)=>{
         throw new ApiError(500, "Something went wrong in server while registering the user")
     }
 
-    //sending client the response id the user is created.
+    //sending client the response if the user is created.
     res.status(201).json(
         new Apiresponse(
             200, 
