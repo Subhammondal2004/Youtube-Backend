@@ -4,6 +4,23 @@ import  Apiresponse from "../utils/apiResponse.js";
 import { User }  from "../models/user-model.js";
 import { uploadCloudinary } from "../utils/cloudinary.js";
 
+//method to generate tokens 
+const generateAccessAndRefreshTokens = async(userId)=>{
+    try {
+        const user = await User.findById(userId);
+        const accessToken = user.generateAccessToken()
+        const refreshToken = user.generateRefreshToken()
+
+        user.refreshToken = refreshToken;
+        await user.save({ validateBeforeSave: false })  //just save the current values without any validations 
+
+        return { accessToken, refreshToken}
+
+    } catch (error) {
+        throw new ApiError(500, "Internal error while generating Access and Refresh Tokens")
+    }
+}
+
 const registerUser = asyncHandler(async(req, res)=>{
     const {username, fullname, email, password}= req.body;
 
@@ -28,7 +45,7 @@ const registerUser = asyncHandler(async(req, res)=>{
     if(req.files?.coverImage && req.files?.coverImage.length > 0){
         coverImagelocalPath = req.files.coverImage[0].path;
     }
-    
+
     //checking if the avatar is uploaded or not
     if(!avatarlocalPath){
         throw new ApiError(400, "Avatar is required");
@@ -72,4 +89,88 @@ const registerUser = asyncHandler(async(req, res)=>{
 
 })
 
-export {registerUser}
+const loginUser = asyncHandler(async(req, res)=>{
+    const {email, username, password} = req.body;
+
+    //check whether the username or email is given or not
+    if(!username || !email){
+        throw new ApiError(400, "username or email is required!");
+    }
+
+    //if given username or email then find in the databasa
+    const exitUser = await User.findOne({
+        $or: [{ username },{ email }]
+    })
+
+    //if user doesnot exist throws error to client
+    if(!exitUser){
+        throw new ApiError(400, "user dosenot exists, please register!!!!")
+    }
+
+    //check if the password matches or not
+    const isPasswordValid = await exitUser.isPasswordCorrect(password);
+
+    if(!isPasswordValid){
+        throw new ApiError(401, "Invaild user credentials!!!!")
+    }
+
+    //getting tokens from the method call and destructuring both
+    const {accessToken, refreshToken} =  await generateAccessAndRefreshTokens(exitUser._id);
+
+    //when findOne operation is used all the quary were included so again updating the user
+    const loggedInUser = await User.findById(exitUser._id).select("-password -refreshToken");
+
+    //using this, the cookies can only be modified by server, and cannot be modified from frontend.
+    const options = {
+        httpOnly: true,
+        secure: true
+    }
+
+    return res
+    .status(200)
+    .cookie("accessToken", accessToken, options)
+    .cookie("refreshToken", refreshToken, options)
+    .json(
+        new Apiresponse(
+            200,
+            {
+                exitUser: loggedInUser, accessToken, refreshToken
+            },
+            "User loggedIn successfully!!!"
+        )
+    )
+
+})
+
+const logoutUser = asyncHandler( async(req, res)=>{
+    await User.findByIdAndUpdate(
+        req.user._id,
+        {
+            $set: {
+                refreshToken: undefined
+            }
+        },
+        {
+            new : true     //return response with new updated value
+        }
+    )
+
+    const options = {
+        httpOnly: true,
+        secure: true
+    }
+
+    return res
+    .status(200)
+    .clearCookie("accessToken", options)
+    .clearCookie("refreshToken", options)
+    .json(
+        new Apiresponse(200, {}, "User logged out successfully!!!")
+    )
+})
+
+export {
+    registerUser,
+    loginUser,
+    logoutUser
+}
