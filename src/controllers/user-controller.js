@@ -371,6 +371,81 @@ const updatecoverImage = asyncHandler(async(req, res)=>{
     )
 })
 
+const getSubscriberDetails = asyncHandler(async(req, res)=>{
+    const { username } = req.params
+
+    if(!username){
+        throw new ApiError(400, "Credentials missing!")
+    }
+
+    // MongoDB aggregate pipeline is powerful framework for transformig and analysing data stored in DB.
+    const channel =  await User.aggregate([
+        {                                            //pipeline stage
+            $match:{
+                username: username.toLowerCase()            //Filters documents based on given fields.
+            }                                               // Only filtered documents will be passed to the next pipeline stages.
+        },                     
+        {
+            $lookup:{                                     //used to join different collections documents in same DB.
+                from: "subscriptions",     //name of other collection to join      
+                localField: "_id",         // field of the current collection
+                foreignField: "channel",    // field of the other collection
+                as: "subscribers"           // name of the result array
+            }
+        },
+        {
+            $lookup:{
+                from: "subscriptions",
+                localField: "_id",
+                foreignField: "subscriber",
+                as: "subscribedTo"
+            }
+        },
+        {
+            $addFields:{
+                subscriberCount :{
+                    $size: "$subscribers"           // user to count the total documents
+                },
+                subscribedToCount:{
+                    $size: "$subscribedTo"
+                },
+                isSubscribed:{
+                    $cond:{                                    //used for checking condition
+                        if: {$in: [req.user?._id, "$subscribers.subscriber"]},          //$in can check both in array and objects.
+                        then: true,
+                        else: false
+                    }
+                }
+            }
+        },
+        {
+            $project:{                              //use to filter the field in a documnets
+                username: 1,                        // if 1 keeps 
+                fullname: 1,
+                avatar: 1,
+                coverImage: 1,
+                subscriberCount: 1,
+                subscribedToCount: 1,
+                isSubscribed: 1
+            }
+        }
+    ])
+
+    if(!channel?.length){
+        throw new ApiError(400, "Channel does not exists.")
+    }
+
+    return res
+    .status(200)
+    .json(
+        new Apiresponse(
+            200,
+            channel[0],
+            "Channel fetched successfully!!!"
+        )
+    )
+})
+
 export {
     registerUser,
     loginUser,
@@ -380,5 +455,6 @@ export {
     getCurrentUser,
     updateAccountDetails,
     updateAvatar,
-    updatecoverImage
+    updatecoverImage,
+    getSubscriberDetails
 }
