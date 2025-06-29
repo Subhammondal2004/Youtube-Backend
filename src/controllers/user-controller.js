@@ -81,14 +81,15 @@ const registerUser = asyncHandler(async(req, res)=>{
     }
 
     //sending client the response if the user is created.
-    res.status(201).json(
+    return res
+    .status(201)
+    .json(
         new Apiresponse(
             200, 
             createdUser,
             "user registered successfully!!!"
         )
     )
-
 })
 
 const loginUser = asyncHandler(async(req, res)=>{
@@ -183,8 +184,8 @@ const refreshAccessToken = asyncHandler( async(req, res)=>{
             incomingRefreshToken,
             process.env.REFRESH_TOKEN_SECRET
         )
-    
-        const user = await User.findById(decordedInfo._id)
+
+        const user = await User.findById(decordedInfo.id)
     
         if(!user){
             throw new ApiError(401, "Invalid credentials!!")
