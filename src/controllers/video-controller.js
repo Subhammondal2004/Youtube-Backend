@@ -1,10 +1,15 @@
 import mongoose, {isValidObjectId} from "mongoose";
 import { Video } from "../models/video-model.js";
-import { User } from "../models/user-model.js";
+import { Like } from "../models/like-model.js";
+import { Comment } from "../models/comment-model.js";
 import { ApiError } from "../utils/apiError.js";
 import ApiResponse from "../utils/apiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { uploadOnCloudinary } from "../utils/cloudinary.js";
+import { 
+    uploadCloudinary,
+    deleteCloudinary
+ } from "../utils/cloudinary.js";
+
 
 const publishVideo = asyncHandler(async(req, res)=>{
     const { title, description} = req.body;
@@ -24,8 +29,8 @@ const publishVideo = asyncHandler(async(req, res)=>{
         throw new ApiError(400, "Thumbnail is required!")
     }
 
-    const videoupload = await uploadOnCloudinary(videolocalPath)
-    const thumbnailupload = await uploadOnCloudinary(thumbnaillocalPath)
+    const videoupload = await uploadCloudinary(videolocalPath)
+    const thumbnailupload = await uploadCloudinary(thumbnaillocalPath)
 
     if(!videoupload){
         throw new ApiError(400, "Video file not found")
@@ -39,10 +44,15 @@ const publishVideo = asyncHandler(async(req, res)=>{
         title,
         description,
         duration: videoupload.duration,
-        video: videoupload?.url,
-        thumbnail: thumbnailupload?.url,
+        video:{
+            url:videoUploaded.url,
+            public_id:videoUploaded.public_id,
+        },
+        thumbnail:{ 
+            url:thumbnailupload.url,
+            public_id: thumbnailupload.public_id,
+        },
         owner: req.user?._id,
-        isPublished:false,
     })
 
     const videoUploaded = await Video.findById(video._id)
@@ -210,7 +220,180 @@ const getVideoById = asyncHandler(async(req, res)=>{
     )
 });
 
+const updateVideo = asyncHandler(async(req, res)=>{
+    const { videoId } = req.params;
+    const { title, description} = req.body;
+
+    if(!isValidObjectId(videoId)){
+        throw new ApiError(400, "Invalid videoId")
+    }
+
+    if([title, description].some((field)=>field?.trim === "")){
+        throw new ApiError(400, "All fields are required")
+    }
+
+    const thumbnailPath = req.file?.path
+
+    if(!thumbnailPath){
+        throw new ApiError(400, "Thumbnail is required!")
+    }
+
+    const video = await Video.findById(videoId);
+
+    if(!video){
+        throw new ApiError(400, "Video not found!!")
+    }
+
+    if(video.owner?.trim.toString() !== req.user?._id.toString()){
+        throw new ApiError(401, "You donot have permission to update!")
+    }
+
+    const thumnailToDelete = video.thumbnail.public_id;
+
+    //uploading the new thumbnail
+    const thumbnailupload = await uploadCloudinary(thumbnailPath)
+
+    if(!thumbnailupload){
+        throw new ApiError(400, "Failed to upload thumbnail!")
+    }    
+    const updateVideo = await Video.findByIdAndUpdate(
+        videoId,
+        {
+            $set:{
+                title,
+                description,
+                thumbnail:{
+                    url: thumbnailupload?.url,
+                    public_id: thumbnailupload?.public_id
+                }
+            }
+        },
+        {
+            new: true
+        }
+    )
+
+    if(updateVideo){
+        //deleting the old thumbnail
+        await deleteCloudinary(thumnailToDelete)
+    }
+
+    if(!updateVideo){
+        throw new ApiError(500, "Internal server error while updating details, try again!!")
+    }
+
+    return res
+    .status(200)
+    .json(
+        new ApiResponse(
+            200,
+            updateVideo,
+            "Video details updated successfully!!!"
+        )
+    )
+});
+
+const deleteVideo = asyncHandler(async(req, res)=>{
+    const { videoId } = req.params
+
+    if(!isValidObjectId(videoId)){
+        throw new ApiError(400, "Invalid VideoId")
+    }
+
+    const video = await Video.findById(videoId)
+
+    if(!video){
+        throw new ApiError(400, "Video not found!!")
+    }
+
+    if(video.owner?.toString() !== req.user?._id.toString()){
+        throw new ApiError(401, "You donot have the permission to delete video!")
+    }
+
+    const videoPublicId = video?.video.public_id
+    const thumbnailPublicId = video?.thumbnail.public_id
+
+    const deletedVideo = await Video.findByIdAndDelete(videoId)
+
+    if(!deletedVideo){
+        throw new ApiError(400, "Failed to delete video, please try again!!")
+    }
+
+    if(deletedVideo){
+        await deleteCloudinary(videoPublicId, "video"),
+        await deleteCloudinary(thumbnailPublicId)
+    }
+
+    //delete all likes
+    await Like.deleteMany({
+        video: videoId
+    })
+
+    //delete all comments
+    await Comment.deleteMany({
+        video: videoId
+    })
+
+    return res
+    .status(200)
+    .json(
+        new ApiResponse(
+            200,
+            deletedVideo,
+            "Video deleted successfully!!!"
+        )
+    )
+});
+
+const togglePublishStatus = asyncHandler(async(req, res)=>{
+    const { videoId } = req.params
+
+    if(!isValidObjectId(videoId)){
+        throw new ApiError(400, "Invaild videoId")
+    }
+
+    const video = await Video.findById(videoId)
+
+    if(!video){
+        throw new ApiError(400, "Video not found!")
+    }
+
+    if(video.owner?.toString() !== req.user?._id.toString()){
+        throw new ApiError(400, "You are not the owner of video!")
+    }
+
+    const updateStatus = await Video.findByIdAndUpdate(
+        videoId,
+        {
+            $set:{
+                isPublished: !video?.isPublished
+            }
+        },
+        {
+            new: true
+        }
+    )
+
+    if(!updateStatus){
+        throw new ApiError(400, "Failed to toggle published status!")
+    }
+
+    return res
+    .status(200)
+    .json(
+        new ApiResponse(
+            200,
+            updateStatus,
+            "Published status toggled successfully!!!"
+        )
+    )
+
+})
+
 export {
     publishVideo,
-    getVideoById
+    getVideoById,
+    updateVideo,
+    deleteVideo,
+    togglePublishStatus
 }
