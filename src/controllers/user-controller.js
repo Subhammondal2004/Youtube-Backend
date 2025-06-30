@@ -1,10 +1,10 @@
+import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/apiError.js";
 import  Apiresponse from "../utils/apiResponse.js";
 import { User }  from "../models/user-model.js";
 import { uploadCloudinary } from "../utils/cloudinary.js";
-import jwt from "jsonwebtoken";
-import mongoose from "mongoose";
 
 //method to generate tokens 
 const generateAccessAndRefreshTokens = async(userId)=>{
