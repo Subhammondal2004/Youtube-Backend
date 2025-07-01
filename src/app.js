@@ -14,9 +14,11 @@ app.use(express.static('public'))
 app.use(cookieParser())
 
 //import router
-import userRoute from "./routes/user-route.js"
+import userRoute from "./routes/user-route.js";
+import videoRoute from "./routes/video-route.js";
 
 app.use("/api/v1/users",userRoute)
+app.use("/api/v1/videos",videoRoute)
 
 
 export default app
